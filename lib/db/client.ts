@@ -37,6 +37,10 @@ async function connect(): Promise<Db> {
     holder.close = () => pool.end();
     return drizzle(pool, { schema }) as unknown as Db;
   }
+  if (process.env.VERCEL) {
+    // Serverless file systems are read-only: the local PGlite fallback can't run there.
+    throw new Error("DATABASE_URL is not set. Add the Neon connection string in Vercel → Project → Settings → Environment Variables, then redeploy.");
+  }
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle } = await import("drizzle-orm/pglite");
   const { migrate } = await import("drizzle-orm/pglite/migrator");

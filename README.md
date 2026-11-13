@@ -51,6 +51,6 @@ flowchart LR
 ```
 
 ## Deploy (not done yet, by request)
-Neon is connected (ap-southeast-1) → copy the same env vars to Vercel (env vars, `vercel.json` sets `bom1` + daily cron 20:00 IST) → GitHub secrets `CRON_SECRET` + `APP_URL` for `.github/workflows/tick.yml`.
+Neon is connected (ap-southeast-1) → copy the same env vars to Vercel (env vars, `vercel.json` sets `sin1` (next to Neon ap-southeast-1) + daily cron 20:00 IST) → GitHub secrets `CRON_SECRET` + `APP_URL` for `.github/workflows/tick.yml`.
 
 See `docs/DECISIONS.md` for every trade-off and `docs/REVIEW_QUEUE.md` for what still needs a human.
