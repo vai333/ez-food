@@ -52,7 +52,7 @@ export function CookClient({ slug }: { slug: string }) {
   const wake = useRef<WakeLockSentinel | null>(null);
 
   useEffect(() => {
-    getJson<{ recipe: Recipe; personalMinutes: number | null }>(`/api/recipe?slug=${encodeURIComponent(slug)}`)
+    getJson<{ recipe: Recipe; personalMinutes: number | null }>(`/api/recipe?slug=${encodeURIComponent(slug)}${mealId ? `&meal=${mealId}` : ""}`)
       .then((r) => { setRecipe(r.recipe); setPersonal(r.personalMinutes); })
       .catch((e) => setErr(e instanceof Error ? e.message : "Couldn't load recipe"));
     try {
@@ -61,7 +61,7 @@ export function CookClient({ slug }: { slug: string }) {
       const s = localStorage.getItem(SKEY(slug));
       if (s) { setStep(Number(s)); setMode("cook"); }
     } catch {}
-  }, [slug]);
+  }, [slug, mealId]);
 
   // Background-safe timers: store the end time, render from the clock.
   useEffect(() => {

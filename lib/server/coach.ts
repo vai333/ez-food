@@ -19,7 +19,10 @@ import { detectRedFlags, isMedicationQuestion, MEDICATION_REPLY } from "../safet
 import { scanText, validateRecipe } from "../safety/validate";
 import { SLOT_LABEL } from "../seed/plan";
 import type { MealSlot, Recipe } from "../types";
-import { allRecipes, getPersonalisations, personaliseAll } from "./recipes";
+import { allRecipes, getPersonalisations, personaliseAll, plannedKcal, portionContext } from "./recipes";
+import { activeUnits } from "../engine/personalise";
+import { calorieFactor, KCAL_MAX, KCAL_MIN, portionRecipe, type UnitPref } from "../engine/portions";
+import { slotsForDate } from "../engine/plan";
 import { userPlans, type UserPlan } from "./today";
 import { logEvent, posteriors, remember } from "./learning";
 import type { User } from "./session";
@@ -107,11 +110,14 @@ function catalogText(recipes: Map<string, Recipe>) {
     .join("\n");
 }
 
-function describeRule(p: Personalisation) {
+function describeRule(p: Personalisation): string {
+  if (p.kind === "units") return `quantities shown in ${p.units.solid === "original" ? "cups" : p.units.solid} / ${p.units.liquid === "original" ? "cups" : p.units.liquid}${p.units.spoons === "metric" ? ", spoons converted too" : ""}`;
+  if (p.kind === "calorie_target") return `calorie target ${p.kcal} kcal ${p.date ? `on ${p.date}` : "every day"}`;
   if (p.kind === "substitute") return `use ${p.to} instead of ${p.from}${p.recipes === "all" ? "" : ` in ${p.recipes.length} recipes`}`;
   if (p.kind === "avoid") return `avoid ${p.ingredient}`;
   if (p.kind === "hydration_drink") return `tracks ${p.name} as daily drink`;
-  return p.text;
+  if (p.kind === "note") return p.text;
+  return "";
 }
 
 // ---------------------------------------------------------------- opening messages
@@ -165,6 +171,7 @@ export async function sendMessage(user: User, thread: Thread, text: string) {
   const plans = await userPlans(user.id);
   const rules = await getPersonalisations(user.id);
   const recipes = personaliseAll(await allRecipes(), rules, user.strictCapsicum);
+  const todayKcal = await portionContext(user, toIst().date, rules);
   const st = await weekStats(user, plans);
   const history = await db.select().from(s.chatMessages).where(and(eq(s.chatMessages.userId, user.id), eq(s.chatMessages.thread, thread))).orderBy(desc(s.chatMessages.createdAt)).limit(20);
   const current = st.plan ? (st.plan.menu ?? defaultWeekMenu()) : defaultWeekMenu();
@@ -177,7 +184,7 @@ export async function sendMessage(user: User, thread: Thread, text: string) {
       userId: user.id,
       system: coachSystem(renderConstraints(user.strictCapsicum, user.eatingWindowStart, user.eatingWindowEnd), thread),
       prompt: `${coachContext({
-        profile: `eating window ${user.eatingWindowStart}-${user.eatingWindowEnd} IST; wake ~${user.learnedWakeTime}; all chillies avoided: ${user.strictCapsicum}; dinner carb ${user.dinnerCarb}`,
+        profile: `eating window ${user.eatingWindowStart}-${user.eatingWindowEnd} IST; wake ~${user.learnedWakeTime}; all chillies avoided: ${user.strictCapsicum}; dinner carb ${user.dinnerCarb}; today's planned ≈ ${todayKcal.plannedKcal} kcal (menu as written ≈ ${todayKcal.baseKcal})${todayKcal.target ? `, target ${todayKcal.target}` : ""}`,
         currentWeek: menuText(current, recipes),
         weekStats: st.text,
         personal: rules.map(describeRule).join("; "),
@@ -224,7 +231,21 @@ function scrubName(text: string, name: string): string {
 }
 
 async function reply(user: User, thread: Thread, text: string, quick: string[], proposals: ProposalInT[]) {
+  // eslint-disable-next-line no-param-reassign
   const db = await getDb();
+  // Answer "how many grams?" directly: the app (not the model) computed the numbers, so state them in the reply.
+  const numbers: string[] = [];
+  for (const p of proposals) {
+    if (p.kind !== "set_calorie_target" && p.kind !== "set_units") continue;
+    const v = await validateProposal(user, p);
+    // One line per recipe, preferring the soak instruction, max two recipes.
+    const first = ((v.preview.recipes as RecipeDiff[] | undefined) ?? [])
+      .map((r) => (r.changes.find((c) => /^Soak/i.test(c.after)) ?? r.changes.find((c) => /\d\s*(g|mg|kg|oz|ml|l)\b/.test(c.after)))?.after)
+      .filter((x): x is string => !!x)
+      .slice(0, 2);
+    if (v.status === "pending" && first.length) numbers.push(...first);
+  }
+  if (numbers.length) text = `${text}\n\nIn numbers: ${numbers.map((n) => n.replace(/\.$/, "")).join("; ")}.`;
   // Confirming happens on the cards (or by typing "confirm"); drop vague "yes/looks good" chips so taps are never ambiguous.
   const chips = quick.filter((q) => !/^(yes|ok|okay|sure|looks good|perfect|great|confirm\b)/i.test(q.trim())).slice(0, 4);
   const [msg] = await db.insert(s.chatMessages).values({ userId: user.id, thread, role: "assistant", content: text, quickReplies: chips }).returning();
@@ -242,6 +263,18 @@ async function reply(user: User, thread: Thread, text: string, quick: string[], 
 // ---------------------------------------------------------------- scripted fallback (no AI)
 async function fallback(user: User, thread: Thread, text: string, st: Awaited<ReturnType<typeof weekStats>>): Promise<{ reply: string; quick: string[]; proposals: ProposalInT[] }> {
   const t = text.toLowerCase();
+  const kcalM = t.match(/(\d{3,5})\s*(?:k?cal|calories|kcal)/);
+  const unitM = t.match(/\b(milligrams?|mg|kilograms?|kg|grams?|gm|ounces?|oz)\b/);
+  if (kcalM || unitM) {
+    const proposals: ProposalInT[] = [];
+    if (unitM) {
+      const w = unitM[1];
+      const solid = /^m(illi)?g/.test(w) || w === "mg" ? "mg" : /^k/.test(w) ? "kg" : /^o/.test(w) ? "oz" : "g";
+      proposals.push({ kind: "set_units", solid, liquid: "ml", spoons: /everything|all|spoon|tsp/.test(t) ? "metric" : "keep" });
+    }
+    if (kcalM) proposals.push({ kind: "set_calorie_target", kcal: Number(kcalM[1]), scope: /\btoday\b/.test(t) ? "today" : "ongoing" });
+    return { reply: "Here's exactly what would change. Tap Confirm on each card you want.", quick: [], proposals };
+  }
   const drink = t.match(/(?:drink|switch to|use|prefer|have)\s+([a-z ]*?water|green tea|black coffee)\b/);
   if (drink && drink[1].trim() !== "water") {
     const name = drink[1].trim();
@@ -414,6 +447,42 @@ export async function validateProposal(user: User, p: ProposalInT): Promise<Vali
       return pending({ kind: p.kind, planId: plan?.id ?? null, week: p.week ?? "current", goal }, { title });
     }
 
+    case "set_units": {
+      const units: UnitPref = { solid: p.solid ?? "g", liquid: p.liquid ?? (p.solid && p.solid !== "original" ? "ml" : "original"), spoons: p.spoons ?? "keep" };
+      const label = (u: UnitPref) => [u.solid === "original" ? "cups" : u.solid, u.liquid === "original" ? "cups" : u.liquid].filter((x, i, a) => a.indexOf(x) === i).join(" + ") + (u.spoons === "metric" ? ", spoons too" : "");
+      const title = `Show quantities in ${label(units)}`;
+      const cur = activeUnits(rules);
+      if (cur.solid === units.solid && cur.liquid === units.liquid && cur.spoons === units.spoons) return blocked("That's already how quantities are shown.", p, { title });
+      const cf = (await portionContext(user, toIst().date, rules)).factor;
+      const examples = sampleChanges(base, rules, user.strictCapsicum, { units, factor: cf, beforeFactor: cf });
+      return pending({ kind: p.kind, rule: { kind: "units", units } }, { title, reason: units.solid === "mg" ? "Milligrams make kitchen amounts very large numbers (1 cup of dal ≈ 200,000 mg), but you'll see exactly that everywhere." : "Applies to recipes, prep reminders and cooking steps everywhere in the app.", recipes: examples });
+    }
+
+    case "set_calorie_target": {
+      const kcal = p.kcal ?? 0;
+      const scope = p.scope ?? "ongoing";
+      const today = toIst().date;
+      const title = `${kcal.toLocaleString("en-IN")} kcal ${scope === "today" ? "today" : "every day"}`;
+      if (!kcal) return incomplete();
+      if (kcal < KCAL_MIN || kcal > KCAL_MAX) return blocked(`${kcal} kcal is outside the ${KCAL_MIN}–${KCAL_MAX} range EZ FOOD can plan safely. Please set a target with your doctor or nutritionist first.`, p, { title });
+      const plans = await userPlans(user.id);
+      const slots = slotsForDate(plans, today) ?? [];
+      const baseKcal = plannedKcal(recipes, slots.flatMap((x) => x.recipeSlugs));
+      const { factor, clamped } = calorieFactor(baseKcal, kcal);
+      const units = activeUnits(rules);
+      const current = await portionContext(user, today, rules);
+      const examples = sampleChanges(base, rules, user.strictCapsicum, { units, factor, beforeFactor: current.factor, slugs: slots.filter((x) => x.slot !== "wake").flatMap((x) => x.recipeSlugs) });
+      const reached = Math.round(baseKcal * factor);
+      return pending(
+        { kind: p.kind, rule: { kind: "calorie_target", kcal, ...(scope === "today" ? { date: today } : {}) }, reason: p.reason },
+        {
+          title,
+          reason: `Today's menu as written is ≈ ${baseKcal} kcal. Food portions × ${factor.toFixed(2)} → ≈ ${reached} kcal${clamped ? ` (portions are capped at ${factor < 1 ? "half" : "2.5×"}, so it lands short of ${kcal})` : ""}. Added fat stays ≤ 1 tsp per meal; spices unchanged. Numbers are estimates; worth confirming the target with your nutritionist.`,
+          recipes: examples,
+        },
+      );
+    }
+
     case "remember_note": {
       const note = (p.note ?? "").trim();
       if (!note) return incomplete();
@@ -453,6 +522,34 @@ export async function validateProposal(user: User, p: ProposalInT): Promise<Vali
       );
     }
   }
+}
+
+/** Before → after lines for a few plan recipes under new units / portions (for the confirm card). */
+function sampleChanges(base: Recipe[], rules: Personalisation[], strict: boolean, o: { units?: UnitPref; factor?: number; slugs?: string[]; beforeFactor?: number }): RecipeDiff[] {
+  // Both sides start from the un-portioned recipe (substitutions/avoids only), so nothing is converted twice.
+  const raw = new Map<string, Recipe>();
+  for (const r of base) {
+    const p = personaliseRecipe(r, rules);
+    if (p) raw.set(r.slug, p);
+  }
+  const slugs = o.slugs?.length ? o.slugs : ["green-moong-chilla", "yellow-moong-dal", "papaya-walnuts", "palak-khichdi"];
+  const out: RecipeDiff[] = [];
+  for (const slug of slugs) {
+    const r0 = raw.get(slug);
+    if (!r0) continue;
+    const b = portionRecipe(r0, { units: activeUnits(rules), factor: o.beforeFactor ?? 1 });
+    const a = portionRecipe(r0, { units: o.units ?? activeUnits(rules), factor: o.factor ?? 1 });
+    const changes: { before: string; after: string }[] = [];
+    const line = (i: { qty?: number; unit?: string; name: string; note?: string }) => `${i.qty ?? ""} ${i.unit ?? ""} ${i.name}${i.note && /≈/.test(i.note) ? ` (${i.note.match(/≈[^,]*/)![0]})` : ""}`.replace(/\s+/g, " ").trim();
+    b.ingredients.forEach((ing, k) => {
+      const x = a.ingredients[k];
+      if (x && line(x) !== line(ing)) changes.push({ before: line(ing), after: line(x) });
+    });
+    if (b.leadTask && a.leadTask && a.leadTask.instruction !== b.leadTask.instruction) changes.push({ before: b.leadTask.instruction, after: a.leadTask.instruction });
+    if (changes.length) out.push({ slug, title: b.titleEn, changes: changes.slice(0, 4) });
+    if (out.length >= 4) break;
+  }
+  return out;
 }
 
 function bestReplacement(r: Recipe, slot: MealSlot, pool: Map<string, Recipe>, siblings: string[]): Recipe | null {
@@ -509,6 +606,17 @@ async function apply(user: User, kind: string, payload: Record<string, unknown>)
   const db = await getDb();
   const today = toIst().date;
   switch (kind) {
+    case "set_units":
+    case "set_calorie_target": {
+      const rule = payload.rule as Personalisation;
+      // One active rule per kind (a day-only calorie target replaces only that day's).
+      const old = await db.select().from(s.personalisations).where(and(eq(s.personalisations.userId, user.id), eq(s.personalisations.kind, rule.kind), eq(s.personalisations.active, true)));
+      const same = old.filter((o) => rule.kind !== "calorie_target" || (o.payload as { date?: string }).date === (rule as { date?: string }).date);
+      if (same.length) await db.update(s.personalisations).set({ active: false }).where(inArray(s.personalisations.id, same.map((o) => o.id)));
+      await db.insert(s.personalisations).values({ userId: user.id, kind: rule.kind, payload: rule });
+      await regenerateFrom(user, today);
+      return rule.kind === "units" ? "Done. Recipes, prep reminders and cooking steps now show your units." : `Done. Portions now aim for ${(rule as { kcal: number }).kcal} kcal ${(rule as { date?: string }).date ? "today" : "every day"}. Open any recipe to see the new amounts.`;
+    }
     case "substitute_ingredient":
     case "hydration_drink": {
       const rule = payload.rule as Personalisation;

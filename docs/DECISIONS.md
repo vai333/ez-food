@@ -69,3 +69,11 @@ Each entry: what was chosen, what was given up, and why. Safety rules (build pro
 
 ## D-13 · Database
 - Neon project (ap-southeast-1, Postgres 18) connected 2026-11-13: pooled URL for the app, direct URL for `drizzle-kit migrate`. Migrations `0000_init` and `0001_coach_and_weeks` applied; 21 tables. PGlite remains the fallback when `DATABASE_URL` is empty.
+
+## D-14 · Units and calorie-based portions through the coach (owner request, 2026-11-13)
+- Two new coach changes, confirmed like every other: `set_units` (solids g / mg / kg / oz, liquids ml / l / cup / fl oz, spoons kept or converted) and `set_calorie_target` (today only or every day).
+- One pure engine (`lib/engine/portions.ts`) applies them **everywhere a quantity appears**: recipe ingredients, cooking steps, descriptions and prep reminders ("Soak 1 cup moong" → "Soak 200 g moong"). Quantities inside text are parsed (fractions, decimals) and matched to the nearest ingredient words; times ("4 hours", "4 whistles") are never touched.
+- **Calorie target:** factor = target ÷ that day's planned kcal (per-day, because menus differ), clamped 0.5×–2.5×. Food scales; **added fat never scales** (≤ 1 tsp cap), spices and "to taste" stay, cooking water scales with the dal but drinking water doesn't. Range 1,200–3,500 kcal; outside it the coach refuses and points to the nutritionist. The plan as written is ≈ 1,015 kcal (Menu A) / ≈ 820 kcal (Menu B); this is shown on the confirm card.
+- Counts stay human ("4 walnuts (≈ 20 g)"). Densities and kcal are kitchen estimates (REVIEW_QUEUE).
+- The app, not the model, computes every number; the coach reply quotes them ("In numbers: Soak 435 g whole green moong dal").
+- Every portioned recipe is re-validated; a portion or unit change can't break a hard rule (property-tested over all recipes × factors × unit systems).

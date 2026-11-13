@@ -132,6 +132,13 @@ export function TodayClient() {
         </Link>
       )}
       {data.weekGoals.length > 0 && <p className="mt-4 text-sm muted">This week&apos;s goal: <span className="text-white">{data.weekGoals.join(" · ")}</span></p>}
+      {data.kcal.planned > 0 && (
+        <p className="mt-2 text-sm muted tabular">
+          Planned today ≈ <span className="text-white">{data.kcal.planned.toLocaleString("en-IN")} kcal</span>
+          {data.kcal.target ? <> · target {data.kcal.target.toLocaleString("en-IN")}{data.kcal.factor !== 1 ? ` · portions ×${data.kcal.factor}` : ""}</> : null}
+          <span className="faint"> (estimate)</span>
+        </p>
+      )}
 
       {/* Game strip */}
       <Link href="/progress" className="card group mt-6 p-4 flex items-center gap-4 rise" style={{ animationDelay: ".05s" }}>

@@ -6,7 +6,12 @@ export const COACH_PROMPT_VERSION = "coach-v1";
 export const SLOTS = ["wake", "breakfast", "snack", "dinner"] as const;
 
 export const ProposalIn = z.object({
-  kind: z.enum(["substitute_ingredient", "avoid_ingredient", "hydration_drink", "swap_meal", "set_meal_time", "set_goal", "remember_note", "week_plan"]),
+  kind: z.enum(["substitute_ingredient", "avoid_ingredient", "hydration_drink", "swap_meal", "set_meal_time", "set_goal", "remember_note", "set_units", "set_calorie_target", "week_plan"]),
+  solid: z.enum(["original", "g", "mg", "kg", "oz"]).optional(),
+  liquid: z.enum(["original", "ml", "l", "cup", "fl oz"]).optional(),
+  spoons: z.enum(["keep", "metric"]).optional(),
+  kcal: z.number().int().min(0).max(10000).optional(),
+  scope: z.enum(["today", "ongoing"]).optional(),
   reason: z.string().max(300).optional(),
   from: z.string().max(60).optional(),
   to: z.string().max(60).optional(),
@@ -51,7 +56,7 @@ const DayIn = z.object({
   dinnerTime: z.string().max(5).optional(),
 });
 const WeekPlanIn = z.object({ summary: z.string().max(500), goals: z.array(z.string().max(100)).min(1).max(4), days: z.array(DayIn).length(7) });
-const ChangeIn = ProposalIn.omit({ days: true, summary: true, goals: true }).extend({ kind: z.enum(["substitute_ingredient", "avoid_ingredient", "hydration_drink", "swap_meal", "set_meal_time", "set_goal", "remember_note"]) });
+const ChangeIn = ProposalIn.omit({ days: true, summary: true, goals: true }).extend({ kind: z.enum(["substitute_ingredient", "avoid_ingredient", "hydration_drink", "swap_meal", "set_meal_time", "set_goal", "remember_note", "set_units", "set_calorie_target"]) });
 
 /** What the model sees: a week plan with REQUIRED days (models skip optional nested arrays), small changes separately. */
 export const CoachOutSchemaHint = z.object({
@@ -96,6 +101,15 @@ HOW CHANGES WORK: you never change anything yourself. You PROPOSE changes ("chan
 whole week, always with all 7 days filled from <catalog>); the app checks them and the
 user taps Confirm or Not now. In your reply, describe the change in plain words and ask the user to confirm it.
 Only use recipe slugs from <catalog>. Proposal kinds:
+- set_units {solid, liquid, spoons}: how quantities are shown EVERYWHERE (recipes, prep tasks, cooking steps).
+  solid: "g" | "mg" | "kg" | "oz" | "original" (cups); liquid: "ml" | "l" | "cup" | "fl oz" | "original";
+  spoons: "keep" (tsp/tbsp stay) | "metric" (tsp/tbsp also converted). "Grams instead of cups" → solid "g", liquid "ml",
+  spoons "keep". "Everything in grams" → spoons "metric". Counts like 4 walnuts stay counts with a ≈ weight shown.
+- set_calorie_target {kcal, scope:"today"|"ongoing", reason}: scales FOOD portions so the day's planned meals reach the
+  target (added fat never increases: the 1 tsp cap holds; spices unchanged). Use when the user names a daily calorie
+  goal. The app computes every gram; you don't. Reasonable range 1200–3500; outside it the app refuses.
+  Questions like "how many grams of moong for 2200 kcal?" → propose set_calorie_target (+ set_units if they want
+  grams); the confirm card shows the exact grams.
 - substitute_ingredient {from, to, recipes:[slugs it applies to], reason}: e.g. water → alkaline water in the drinks.
   Scope it tightly: only recipes where the swap makes sense (drinks, not soaking water).
 - avoid_ingredient {ingredient, reason}: the app finds safe replacements in the plan automatically.

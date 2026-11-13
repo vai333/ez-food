@@ -59,6 +59,7 @@ export const PLAN_RECIPES: Recipe[] = [
     ],
     whyGood: "Black pepper pairs well with turmeric, and warm water is a gentle start before the window opens.",
     source: "plan",
+    nutrition: { kcal: 10, proteinG: 0, carbG: 2, fatG: 0, fiberG: 0, source: "estimate" },
     art: "ginger",
   },
   {
@@ -121,6 +122,7 @@ export const PLAN_RECIPES: Recipe[] = [
     steps: [{ text: "Cut the cucumber into sticks." }, { text: "Squeeze lemon, add a pinch of salt and black pepper." }],
     whyGood: "Hydrating and crunchy, with zero added fat.",
     source: "plan",
+    nutrition: { kcal: 35, proteinG: 1, carbG: 7, fatG: 0, fiberG: 1, source: "estimate" },
     art: "cucumber",
   },
   {
@@ -174,11 +176,12 @@ export const PLAN_RECIPES: Recipe[] = [
     quickAssemble: true,
     ingredients: [
       { name: "papaya, diced", qty: 1, unit: "cup", pantry: "papaya" },
-      { name: "walnuts, soaked", qty: 4, unit: "halves", pantry: "walnuts" },
+      { name: "walnuts, soaked", qty: 4, pantry: "walnuts" },
     ],
     steps: [{ text: "Dice the papaya." }, { text: "Drain the walnuts and eat together." }],
     whyGood: "Sweet, light and quick, with walnuts for staying power.",
     source: "plan",
+    nutrition: { kcal: 150, proteinG: 3, carbG: 16, fatG: 9, fiberG: 4, source: "estimate" },
     art: "papaya",
   },
   {
@@ -203,7 +206,7 @@ export const PLAN_RECIPES: Recipe[] = [
       { name: "roasted cumin powder", qty: 0.5, unit: "tsp", pantry: "cumin" },
       { name: "rock salt", note: "a pinch", pantry: "salt" },
       { name: "fresh coriander, finely chopped", pantry: "coriander" },
-      { name: "walnuts, soaked", qty: 4, unit: "halves", pantry: "walnuts" },
+      { name: "walnuts, soaked", qty: 4, pantry: "walnuts" },
     ],
     steps: [
       { text: "In a shaker or blender, combine curd, water, roasted cumin powder and salt." },
@@ -212,6 +215,7 @@ export const PLAN_RECIPES: Recipe[] = [
     ],
     whyGood: "Fermented curd and cumin in a cooling, low-fat drink.",
     source: "plan",
+    nutrition: { kcal: 125, proteinG: 4, carbG: 4, fatG: 10, fiberG: 1, source: "estimate" },
     art: "buttermilk",
   },
   {
@@ -245,6 +249,7 @@ export const PLAN_RECIPES: Recipe[] = [
     ],
     whyGood: "Bottle gourd is light, hydrating and easy on digestion.",
     source: "estimate",
+    nutrition: { kcal: 75, proteinG: 2, carbG: 10, fatG: 3, fiberG: 4, source: "estimate" },
     art: "lauki",
   },
   {
@@ -305,6 +310,7 @@ export const PLAN_RECIPES: Recipe[] = [
     ],
     whyGood: "A small whole-grain portion keeps dinner balanced without weighing you down.",
     source: "estimate",
+    nutrition: { kcal: 215, proteinG: 5, carbG: 45, fatG: 2, fiberG: 3, source: "estimate" },
     art: "rice",
   },
   {
@@ -368,6 +374,7 @@ export const PLAN_RECIPES: Recipe[] = [
     steps: [{ text: "Grate the cucumber and squeeze out a little water." }, { text: "Whisk the curd, fold in the cucumber, and season with cumin and salt." }],
     whyGood: "Cooling and fermented, with no added fat.",
     source: "estimate",
+    nutrition: { kcal: 85, proteinG: 4, carbG: 6, fatG: 4, fiberG: 1, source: "estimate" },
     art: "raita",
   },
 ];

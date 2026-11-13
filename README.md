@@ -7,6 +7,7 @@
 ## Coach chat (week 2 onwards)
 - **Plan your next 7 days:** from day 6 of a week, Today shows a card that opens a short chat about your goal for the coming week (more energy, less cooking time, more variety…). The coach proposes a full week; you confirm it and it becomes Week 2, 3, …
 - **Tell it anything:** "I'd like to drink alkaline water", "no onion", "make snacks crunchier". Each change appears as a card showing exactly what changes (before → after); nothing applies until you tap **Confirm**. Confirmed changes are listed in Settings → Your changes, where you can remove them.
+- **Units and portions:** "tell me grams instead of cups" or "I want 2,200 calories today" changes every quantity in the app (recipes, cooking steps, soak reminders) after you confirm. Added fat stays capped at 1 tsp per meal.
 - The eating window, banned foods and the fat cap can't be changed by chat; that's for your doctor.
 
 ## Run it locally
@@ -20,7 +21,7 @@ Open http://localhost:3710. `.env.local` points at the Neon database (run `npm r
 
 | Command | What it does |
 |---|---|
-| `npm test` | 322 unit + property tests (validator, scheduler, prep pipeline, game, bandit, red flags, notifications) |
+| `npm test` | 337 unit + property tests (validator, scheduler, prep pipeline, game, bandit, red flags, notifications) |
 | `npm run typecheck` / `npm run lint` | TS strict / ESLint |
 | `npm run db:generate` / `npm run db:migrate` | Drizzle migrations (Neon) |
 | `NODE_OPTIONS=--conditions=react-server npx tsx scripts/ai-smoke.mts` | Live Gemini pipeline test (uses `.env.local`) |

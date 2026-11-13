@@ -6,7 +6,15 @@ import { getJson, post } from "@/lib/client/api";
 import { AppShell, Skeleton } from "@/components/ui";
 
 type Profile = { name: string; strictCapsicum: boolean; consentPersonalisation: boolean; learningPaused: boolean; clinicianAware: boolean; dinnerCarb: "rice" | "roti"; learnedWakeTime: string; eatingWindow: [string, string]; notifPrefs: Record<string, boolean>; hasWakeHook: boolean; wakeToken?: string };
-type Personal = { id: string; kind: string; from?: string; to?: string; ingredient?: string; name?: string; text?: string };
+type Personal = { id: string; kind: string; from?: string; to?: string; ingredient?: string; name?: string; text?: string; units?: { solid: string; liquid: string; spoons: string }; kcal?: number; date?: string };
+function describe(r: Personal): string {
+  if (r.kind === "substitute") return `Use ${r.to} instead of ${r.from}`;
+  if (r.kind === "avoid") return `Avoid ${r.ingredient}`;
+  if (r.kind === "hydration_drink") return `Daily drink: ${r.name}`;
+  if (r.kind === "units" && r.units) return `Quantities in ${r.units.solid === "original" ? "cups" : r.units.solid}${r.units.liquid !== "original" && r.units.liquid !== r.units.solid ? ` and ${r.units.liquid}` : ""}${r.units.spoons === "metric" ? " (spoons too)" : ""}`;
+  if (r.kind === "calorie_target") return `${r.kcal?.toLocaleString("en-IN")} kcal ${r.date ? `on ${r.date}` : "every day"}`;
+  return r.text ?? r.kind;
+}
 type PantryItem = { key: string; label: string; group: string; inStock: boolean };
 
 const NOTIF: [string, string][] = [["wake_activation", "Morning ginger water"], ["meal_prep", "Time to start cooking"], ["prep_task", "Soak / sprout reminders"], ["hydration", "Water breaks"], ["window_closing", "Window closing"], ["nightly_reflection", "Nightly reflection"]];
@@ -96,7 +104,7 @@ export default function SettingsPage() {
           <ul className="space-y-2">
             {personal.map((r) => (
               <li key={r.id} className="flex items-center gap-2 rounded-2xl border hair px-3 py-2.5 text-[15px]">
-                <span className="flex-1">{r.kind === "substitute" ? `Use ${r.to} instead of ${r.from}` : r.kind === "avoid" ? `Avoid ${r.ingredient}` : r.kind === "hydration_drink" ? `Daily drink: ${r.name}` : r.text}</span>
+                <span className="flex-1">{describe(r)}</span>
                 <button className="text-sm muted underline underline-offset-4" onClick={async () => { if (confirm("Remove this change? Recipes go back to the plan's version.")) { await post("/api/personalisations", { id: r.id }, { method: "DELETE" }); setPersonal(personal.filter((x) => x.id !== r.id)); } }}>Remove</button>
               </li>
             ))}

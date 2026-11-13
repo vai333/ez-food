@@ -6,12 +6,28 @@
  * Every personalised recipe is re-validated by the caller; a rule can never smuggle in a banned food.
  */
 import type { Recipe } from "../types";
+import { DEFAULT_UNITS, type UnitPref } from "./portions";
 
 export type Personalisation =
   | { kind: "substitute"; from: string; to: string; recipes: string[] | "all"; reason?: string }
   | { kind: "avoid"; ingredient: string; reason?: string }
   | { kind: "hydration_drink"; name: string }
+  | { kind: "units"; units: UnitPref }
+  /** date set = only that day ("2200 kcal today"); unset = every day until changed */
+  | { kind: "calorie_target"; kcal: number; date?: string }
   | { kind: "note"; text: string };
+
+/** Latest unit preference wins. */
+export function activeUnits(rules: Personalisation[]): UnitPref {
+  const u = [...rules].reverse().find((p) => p.kind === "units") as { units: UnitPref } | undefined;
+  return u?.units ?? DEFAULT_UNITS;
+}
+
+/** The calorie target for a date: a day-specific one beats the ongoing one; the latest of each kind wins. */
+export function calorieTargetFor(rules: Personalisation[], date: string): number | null {
+  const t = [...rules].reverse().filter((p) => p.kind === "calorie_target") as { kcal: number; date?: string }[];
+  return (t.find((x) => x.date === date) ?? t.find((x) => !x.date))?.kcal ?? null;
+}
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export const wordRe = (w: string) => new RegExp(`(^|[^a-z])(${esc(w.trim().toLowerCase())})(?=$|[^a-z])`, "gi");

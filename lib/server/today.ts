@@ -9,21 +9,14 @@ import { buildDaySchedule, type ScheduleResult } from "../engine/schedule";
 import { buildPrepTasks } from "../engine/prep";
 import { SLOT_LABEL } from "../seed/plan";
 import type { MealSlot, Recipe } from "../types";
-import { getPersonalisations, userRecipeMap } from "./recipes";
+import { getPersonalisations, portionContext, userRecipeMap } from "./recipes";
 import { hydrationDrink } from "../engine/personalise";
 import { gameSummary } from "./game";
 import { pickIntervention } from "./interventions";
 import type { User } from "./session";
 
-type PlanRecord = typeof s.userPlans.$inferSelect;
-export type UserPlan = PlanRecord & PlanRow;
-
-/** All active plan weeks, oldest first. */
-export async function userPlans(userId: string): Promise<UserPlan[]> {
-  const db = await getDb();
-  const rows = await db.select().from(s.userPlans).where(and(eq(s.userPlans.userId, userId), eq(s.userPlans.status, "active"))).orderBy(asc(s.userPlans.startDate), desc(s.userPlans.createdAt));
-  return rows.map((r) => ({ ...r, menu: (r.menu as WeekMenu | null) ?? null }));
-}
+import { userPlans, type UserPlan } from "./plans";
+export { userPlans, type UserPlan };
 
 /** The plan week covering today (or the first week, if it hasn't started yet). */
 export async function activePlan(userId: string): Promise<UserPlan | null> {
@@ -94,7 +87,9 @@ export async function syncPrep(user: User) {
   const dates = [now.date, addDays(now.date, 1), addDays(now.date, 2)].filter((d) => !!planForDate(plans, d));
   if (!dates.length) return;
   const meals = await db.select().from(s.scheduledMeals).where(and(eq(s.scheduledMeals.userId, user.id), inArray(s.scheduledMeals.date, dates)));
-  const tasks = buildPrepTasks({ slotsFor: (d) => slotsForDate(plans, d), dates, recipes: await userRecipeMap(user), now, mealStarts: new Map(meals.map((m) => [`${m.date}:${m.slot}`, m.plannedStart])) });
+  // Each meal date gets its own portions (calorie target) and units, so "Soak 200 g moong" matches that day's meal.
+  const tasks = [];
+  for (const d of dates) tasks.push(...buildPrepTasks({ slotsFor: (x) => slotsForDate(plans, x), dates: [d], recipes: await userRecipeMap(user, d), now, mealStarts: new Map(meals.map((m) => [`${m.date}:${m.slot}`, m.plannedStart])) }));
   for (const t of tasks) {
     await db.insert(s.prepTasks).values({ userId: user.id, ...t, recovery: t.recovery ?? null, late: !!t.late }).onConflictDoNothing();
   }
@@ -127,6 +122,7 @@ export async function buildToday(user: User) {
   await syncPrep(user);
   const recipes = await userRecipeMap(user);
   const rules = await getPersonalisations(user.id);
+  const portion = await portionContext(user, now.date, rules);
   const latest = plans[plans.length - 1];
   const nextWeekPlanned = plans.some((p) => p.startDate > plan.startDate);
   const weekEnd = planEnd(plan);
@@ -193,6 +189,8 @@ export async function buildToday(user: User) {
     planNext: !nextWeekPlanned && plan.id === latest.id && dayNo >= plan.lengthDays - 1,
     weekGoals: plan.goals,
     hydration: hydrationDrink(rules),
+    /** ≈ estimates: planned kcal for today's menu (after portions) and the user's target, if any. */
+    kcal: { planned: portion.plannedKcal, target: portion.target, factor: portion.factor, clamped: portion.clamped },
     window: { start: hm(user.eatingWindowStart), end: hm(user.eatingWindowEnd) },
     meals: view,
     nextId: next?.id ?? null,
