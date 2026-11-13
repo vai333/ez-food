@@ -1,0 +1,12 @@
+# Calls the notification tick every 5 minutes (Vercel Hobby cron is daily only).
+# GitHub may delay scheduled runs by a few minutes; fine for reminders. Upgrade path: Upstash QStash for exact times.
+name: tick
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" "${{ secrets.APP_URL }}/api/cron/tick"
