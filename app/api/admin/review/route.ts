@@ -10,8 +10,10 @@ import type { Recipe } from "@/lib/types";
 
 function admin(u: User) {
   const refs = env().ADMIN_USER_REFS.split(",").map((x) => x.trim()).filter(Boolean);
-  // Single-user MVP: with no list configured, the only user is the admin.
-  if (refs.length && !refs.includes(u.userRef)) throw new HttpError(403, "forbidden", "Admins only.");
+  // Fail closed: anyone can sign up on the public URL, so admin access exists ONLY for listed user_refs.
+  // Locally (no list, not on Vercel) the single dev user is allowed so the review queue stays testable.
+  const devOpen = !refs.length && !process.env.VERCEL;
+  if (!devOpen && !refs.includes(u.userRef)) throw new HttpError(403, "forbidden", "Admins only.");
 }
 
 export const dynamic = "force-dynamic";
